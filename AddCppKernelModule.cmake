@@ -1,62 +1,86 @@
 cmake_minimum_required(VERSION 3.26.0 FATAL_ERROR)
 
-message(FATAL_ERROR "CPP does not working now")
-
-if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    include(ClangKernelOptions REQUIRED)
-    include(ClangKernelDefinitions REQUIRED)
-else ()
-    message(FATAL_ERROR "Unsupported compiler toolchain")
-endif ()
-
 function(add_cpp_kernel_module MODULE_NAME MODULE_SRC_DIR)
-    set(MODULE_SOURCE_FILES ${ARGN})
+    set(MODULE_SRC ${ARGN})
 
-    add_library(${MODULE_NAME}-obj OBJECT ${MODULE_SOURCE_FILES})
+    set(MODULE_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/${MODULE_NAME}")
+    set(MODULE_OUT "${MODULE_BUILD_DIR}/${MODULE_NAME}.ko")
 
-    target_include_directories(${MODULE_NAME}-obj PUBLIC
-            ${MODULE_SRC_DIR}/include
+    message(STATUS "Kernel source/headers dir used: ${KERNEL_HEADERS_DIRECTORY}")
+    message(STATUS "Built module output expected at: ${MODULE_OUT}")
+
+    set(MODULE_OBJ_FILES "")
+
+    foreach (SRC_FILE IN LISTS MODULE_SRC)
+        get_filename_component(BASE_NAME ${SRC_FILE} NAME_WE)
+        list(APPEND MODULE_OBJ_FILES "${BASE_NAME}.o")
+    endforeach ()
+
+    add_library(${MODULE_NAME}_obj OBJECT ${MODULE_SRC})
+
+    string(REPLACE ";" " " MODULE_OBJ_FILES_STR "${MODULE_OBJ_FILES}")
+
+    file(WRITE "${MODULE_BUILD_DIR}/Makefile"
+            "MOD_NAME := ${MODULE_NAME}\n"
+            "KERNEL := ${KERNEL_HEADERS_DIRECTORY}"
+            "FLAGS := -Wall"
+            "KMOD_DIR := ${MODULE_BUILD_DIR}\n\n"
+            "OBJECTS := ${MODULE_NAME}.o ${MODULE_OBJ_FILES_STR}\n\n"
+            "cc-flags-y += $(FLAGS)\n\n"
+            "cxx-selected-flags = $(shell echo $(KBUILD_CFLAGS) \ \n"
+            "\t| sed s/-D\"KBUILD.\"//g \ \n"
+            "\t| sed s/-Werror=strict-prototypes//g \ \n"
+            "\t| sed s/-Werror=implicit-function-declaration//g \ \n"
+            "\t| sed s/-Werror=implicit-int//g \ \n"
+            "\t| sed s/-Wdeclaration-after-statement//g \ \n"
+            "\t| sed s/-Wno-pointer-sign//g \ \n"
+            "\t| sed s/-Werror=incompatible-pointer-types//g \ \n"
+            "\t| sed s/-Werror=designated-init//g \ \n"
+            "\t| sed s/-std=gnu90//g )\n\n"
+            "cxxflags = $(FLAGS) $(cxx-selected-flags) -fno-builtin -nostdlib -fno-rtti -fno-exceptions -std=c++0x\n\n"
+            "obj-m += $(MOD_NAME).o\n\n"
+            "$(MOD_NAME)-y := $(OBJECTS)\n\n"
+            ".PHONY: $(MOD_NAME).ko\n"
+            "$(MOD_NAME).ko:\n"
+            "\t@echo building module\n"
+            "\tmake -C $(KERNEL) M=$(KMOD_DIR) modules\n\n"
+            "cxx-prefix := \" $(HOSTCXX) [M]  \"\n\n"
+            "%.cpp.o: %.cpp\n"
+            "\t@echo $(cxx-prefix)$@\n"
+            "\t@$(HOSTCXX) $(cxxflags) -c $< -o $@\n"
+            "\t@echo -n > $$(dirname $@)/.$$(basename $@).cmd\n\n"
+            ".PHONY: clean\n"
+            "clean:\n"
+            "\t@echo clean\n"
+            "\tmake -C $(KERNEL) M=$(KMOD_DIR) clean\n"
     )
 
-    target_include_directories(${MODULE_NAME}-obj PRIVATE
-            ${KERNEL_HEADERS_DIRECTORY}/include
+    add_custom_target(module-${MODULE_NAME}-build
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${MODULE_BUILD_DIR}
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MODULE_SRC} ${MODULE_BUILD_DIR}/
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${MODULE_BUILD_DIR}/include/ant-kernel
+            COMMAND ${CMAKE_COMMAND} -E copy_directory ${MODULE_SRC_DIR}/include/ ${MODULE_BUILD_DIR}/include/
+            COMMAND ${CMAKE_COMMAND} -E chdir ${MODULE_BUILD_DIR} make -f Makefile
+            WORKING_DIRECTORY ${MODULE_SRC_DIR}
+            BYPRODUCTS ${MODULE_OUT}
     )
 
-    target_precompile_headers(${MODULE_NAME}-obj PUBLIC
-            ${KERNEL_HEADERS_DIRECTORY}/include/linux/kconfig.h
+    if (NOT USE_LOCAL_KERNEL_BUILD_DIR)
+        add_dependencies(module-${MODULE_NAME}-build kernel-headers)
+    endif ()
+
+    add_custom_target(module-${MODULE_NAME}-install ALL
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/modules
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MODULE_OUT} ${CMAKE_BINARY_DIR}/modules/
+            DEPENDS module-${MODULE_NAME}-build
+            COMMENT "Copying ${MODULE_OUT} to ${CMAKE_BINARY_DIR}/modules/"
     )
 
-    # Define the target and add the OBJECT library as a dependency
-    add_custom_target(${MODULE_NAME})
-    add_dependencies(${MODULE_NAME} ${MODULE_NAME}-obj)
-
-    # Find the directory which contains the object files
-    set(OBJECT_FILES_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${MODULE_NAME}-obj.dir")
-
-    # Set the directory for the build files
-    set(KERNEL_MODULE_BUILD_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${MODULE_NAME}-build-files)
-
-    # Generate the Kbuild file on the POST_BUILD event
-    add_custom_command(
-            TARGET ${MODULE_NAME}
-            POST_BUILD
-            COMMAND ${CMAKE_COMMAND}
-            -DMODULE_NAME=${MODULE_NAME}
-            -DOBJECT_FILES_DIRECTORY=${OBJECT_FILES_DIRECTORY}
-            -DBINARY_DIRECTORY=${KERNEL_MODULE_BUILD_DIRECTORY}
-            -P ${CMAKE_SOURCE_DIR}/cmake/GenerateKBuild.cmake
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-            COMMENT "Generating the Kbuild file."
-            VERBATIM
+    add_custom_target(module-${MODULE_NAME}-clean
+            COMMAND ${CMAKE_COMMAND} -E chdir ${MODULE_BUILD_DIR} make -f Makefile clean
     )
 
-    # Invoke make to build the kernel module
-    add_custom_command(
-            TARGET ${MODULE_NAME}
-            POST_BUILD
-            COMMAND make -C ${KERNEL_BUILD_DIRECTORY} M=${KERNEL_MODULE_BUILD_DIRECTORY} modules
-            WORKING_DIRECTORY ${KERNEL_MODULE_BUILD_DIRECTORY}
-            COMMENT "Building the kernel module."
-            VERBATIM
+    add_custom_target(${MODULE_NAME} ALL
+            DEPENDS module-${MODULE_NAME}-install
     )
 endfunction()

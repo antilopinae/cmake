@@ -12,7 +12,3 @@ function(setup_target_installation_rules TARGET_NAME)
         PATTERN "$<TARGET_FILE_NAME:${TARGET_NAME}>" EXCLUDE
     )
 endfunction()
-
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/Assets
-        DESTINATION .
-)

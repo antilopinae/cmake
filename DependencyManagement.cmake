@@ -9,5 +9,3 @@ else()
     message(WARNING "DependencyManagement: cmake/FindOrCloneDependency.cmake not found.")
     set(CUSTOM_DEP_HANDLER_INCLUDED FALSE)
 endif()
-
-add_subdirectory(Deps)
