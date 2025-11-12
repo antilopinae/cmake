@@ -13,7 +13,11 @@ function(add_cpp_kernel_module MODULE_NAME MODULE_SRC_DIR)
 
     foreach (SRC_FILE IN LISTS MODULE_SRC)
         get_filename_component(BASE_NAME ${SRC_FILE} NAME_WE)
-        list(APPEND MODULE_OBJ_FILES "${BASE_NAME}.o")
+        if ("${FILE_EXT}" STREQUAL ".cpp")
+            list(APPEND MODULE_OBJ_FILES "${BASE_NAME}.cpp.o")
+        else ()
+            list(APPEND MODULE_OBJ_FILES "${BASE_NAME}.o")
+        endif ()
     endforeach ()
 
     add_library(${MODULE_NAME}_obj OBJECT ${MODULE_SRC})
@@ -24,6 +28,7 @@ function(add_cpp_kernel_module MODULE_NAME MODULE_SRC_DIR)
             "MOD_NAME := ${MODULE_NAME}\n"
             "KERNEL := ${KERNEL_HEADERS_DIRECTORY}"
             "FLAGS := -Wall"
+            "EXTRA_CFLAGS += -I${MODULE_BUILD_DIR}/include\n\n"
             "KMOD_DIR := ${MODULE_BUILD_DIR}\n\n"
             "OBJECTS := ${MODULE_NAME}.o ${MODULE_OBJ_FILES_STR}\n\n"
             "cc-flags-y += $(FLAGS)\n\n"
