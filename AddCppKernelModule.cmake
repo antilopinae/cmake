@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.26.0 FATAL_ERROR)
 
+#set(CPP_KERNEL_MODULE_CMAKE_DIR ${CMAKE_CURRENT_LIST_DIR})
+
 # To build kernel module with cpp, I used this article:
 # https://olegkutkov.me/2019/11/10/cpp-in-linux-kernel/
 # In common generated Makefile script will be as this:
@@ -68,7 +70,7 @@ make -C $(KERNEL) M=$(KMOD_DIR) clean
 function(add_cpp_kernel_module)
     set(options "")
     set(oneValueArgs MODULE_NAME MODULE_SRC_DIR)
-    set(multiValueArgs MODULE_SRC MODULE_INCLUDE_DIRS)
+    set(multiValueArgs MODULE_SRC MODULE_INCLUDE_DIRS MODULE_TEMPLATE_NAMES)
 
     cmake_parse_arguments(PARAM
             "${options}"
@@ -81,6 +83,9 @@ function(add_cpp_kernel_module)
     set(MODULE_SRC ${PARAM_MODULE_SRC})
     set(MODULE_SRC_DIR ${PARAM_MODULE_SRC_DIR})
     set(MODULE_INCLUDE_DIRS ${PARAM_MODULE_INCLUDE_DIRS})
+    set(MODULE_TEMPLATE_NAMES ${PARAM_MODULE_TEMPLATE_NAMES})
+
+    string(REPLACE ";" " " MODULE_TEMPLATE_NAMES_STR "${MODULE_TEMPLATE_NAMES}")
 
     set(MODULE_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/${MODULE_NAME}")
     set(MODULE_OUT "${MODULE_BUILD_DIR}/${MODULE_NAME}.ko")
@@ -123,6 +128,7 @@ function(add_cpp_kernel_module)
 
     file(APPEND "${MODULE_BUILD_DIR}/Makefile"
             "FLAGS += -D__KERNEL_MODULE__\n"
+            # "DISABLE_BTF = y\n"
             "KMOD_DIR := ${MODULE_BUILD_DIR}\n\n"
             "OBJECTS := ${MODULE_OBJ_FILES_STR}\n\n"
             "ccflags-y += $(FLAGS)\n\n"
@@ -165,8 +171,9 @@ function(add_cpp_kernel_module)
             ${COMMANDS_COPY_INCLUDE_DIRECTORIES}
             COMMAND ${CMAKE_COMMAND} -E chdir ${MODULE_BUILD_DIR} make -f Makefile clean
             COMMAND ${CMAKE_COMMAND} -E chdir ${MODULE_BUILD_DIR} make -f Makefile
+            COMMAND python3 ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/scripts/extract_templates_from_ko.py ${MODULE_OUT} ${MODULE_TEMPLATE_NAMES_STR}
             WORKING_DIRECTORY ${MODULE_SRC_DIR}
-            BYPRODUCTS ${MODULE_OUT}
+            BYPRODUCTS ${MODULE_OUT} ${MODULE_OUT}.patched
     )
 
     add_dependencies(module-${MODULE_NAME}-build kernel-headers)
@@ -174,6 +181,7 @@ function(add_cpp_kernel_module)
     add_custom_target(module-${MODULE_NAME}-install ALL
             COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/modules
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MODULE_OUT} ${CMAKE_BINARY_DIR}/modules/
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MODULE_OUT}.patched ${CMAKE_BINARY_DIR}/modules/
             COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/modules/include/${MODULE_NAME}
             COMMAND ${CMAKE_COMMAND} -E copy_directory ${MODULE_BUILD_DIR}/include ${CMAKE_BINARY_DIR}/modules/include/${MODULE_NAME}
             DEPENDS module-${MODULE_NAME}-build
