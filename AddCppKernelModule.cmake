@@ -165,28 +165,53 @@ function(add_cpp_kernel_module)
     # include kernel headers dir to syntax highlighting
     include_directories(${KERNEL_HEADERS_DIRECTORY}/include/)
 
-    add_custom_target(module-${MODULE_NAME}-build
-            COMMAND ${CMAKE_COMMAND} -E make_directory ${MODULE_BUILD_DIR}
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MODULE_SRC} ${MODULE_BUILD_DIR}/
-            ${COMMANDS_COPY_INCLUDE_DIRECTORIES}
-            COMMAND ${CMAKE_COMMAND} -E chdir ${MODULE_BUILD_DIR} make -f Makefile clean
-            COMMAND ${CMAKE_COMMAND} -E chdir ${MODULE_BUILD_DIR} make -f Makefile
-            COMMAND python3 ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/scripts/extract_templates_from_ko.py ${MODULE_OUT} ${MODULE_TEMPLATE_NAMES_STR}
-            WORKING_DIRECTORY ${MODULE_SRC_DIR}
-            BYPRODUCTS ${MODULE_OUT} ${MODULE_OUT}.patched
-    )
+    if (MODULE_TEMPLATE_NAMES)
+        add_custom_target(module-${MODULE_NAME}-build
+                COMMAND ${CMAKE_COMMAND} -E make_directory ${MODULE_BUILD_DIR}
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MODULE_SRC} ${MODULE_BUILD_DIR}/
+                ${COMMANDS_COPY_INCLUDE_DIRECTORIES}
+                COMMAND ${CMAKE_COMMAND} -E chdir ${MODULE_BUILD_DIR} make -f Makefile clean
+                COMMAND ${CMAKE_COMMAND} -E chdir ${MODULE_BUILD_DIR} make -f Makefile
+                COMMAND python3 ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/scripts/extract_templates_from_ko.py ${MODULE_OUT} ${MODULE_TEMPLATE_NAMES_STR}
+                WORKING_DIRECTORY ${MODULE_SRC_DIR}
+                BYPRODUCTS ${MODULE_OUT} ${MODULE_OUT}.patched
+        )
 
-    add_dependencies(module-${MODULE_NAME}-build kernel-headers)
+        add_dependencies(module-${MODULE_NAME}-build kernel-headers)
 
-    add_custom_target(module-${MODULE_NAME}-install ALL
-            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/modules
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MODULE_OUT} ${CMAKE_BINARY_DIR}/modules/
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MODULE_OUT}.patched ${CMAKE_BINARY_DIR}/modules/
-            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/modules/include/${MODULE_NAME}
-            COMMAND ${CMAKE_COMMAND} -E copy_directory ${MODULE_BUILD_DIR}/include ${CMAKE_BINARY_DIR}/modules/include/${MODULE_NAME}
-            DEPENDS module-${MODULE_NAME}-build
-            COMMENT "Copying ${MODULE_OUT} to ${CMAKE_BINARY_DIR}/modules/"
-    )
+        add_custom_target(module-${MODULE_NAME}-install ALL
+                COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/modules
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MODULE_OUT} ${CMAKE_BINARY_DIR}/modules/
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MODULE_OUT}.patched ${CMAKE_BINARY_DIR}/modules/
+                COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/modules/include/${MODULE_NAME}
+                COMMAND ${CMAKE_COMMAND} -E copy_directory ${MODULE_BUILD_DIR}/include ${CMAKE_BINARY_DIR}/modules/include/${MODULE_NAME}
+                DEPENDS module-${MODULE_NAME}-build
+                COMMENT "Copying ${MODULE_OUT} to ${CMAKE_BINARY_DIR}/modules/"
+        )
+    else ()
+        add_custom_target(module-${MODULE_NAME}-build
+                COMMAND ${CMAKE_COMMAND} -E make_directory ${MODULE_BUILD_DIR}
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MODULE_SRC} ${MODULE_BUILD_DIR}/
+                ${COMMANDS_COPY_INCLUDE_DIRECTORIES}
+                COMMAND ${CMAKE_COMMAND} -E chdir ${MODULE_BUILD_DIR} make -f Makefile clean
+                COMMAND ${CMAKE_COMMAND} -E chdir ${MODULE_BUILD_DIR} make -f Makefile
+                # COMMAND python3 ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/scripts/extract_templates_from_ko.py ${MODULE_OUT} ${MODULE_TEMPLATE_NAMES_STR}
+                WORKING_DIRECTORY ${MODULE_SRC_DIR}
+                BYPRODUCTS ${MODULE_OUT}
+        )
+
+        add_dependencies(module-${MODULE_NAME}-build kernel-headers)
+
+        add_custom_target(module-${MODULE_NAME}-install ALL
+                COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/modules
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MODULE_OUT} ${CMAKE_BINARY_DIR}/modules/
+                # COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MODULE_OUT}.patched ${CMAKE_BINARY_DIR}/modules/
+                COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/modules/include/${MODULE_NAME}
+                COMMAND ${CMAKE_COMMAND} -E copy_directory ${MODULE_BUILD_DIR}/include ${CMAKE_BINARY_DIR}/modules/include/${MODULE_NAME}
+                DEPENDS module-${MODULE_NAME}-build
+                COMMENT "Copying ${MODULE_OUT} to ${CMAKE_BINARY_DIR}/modules/"
+        )
+    endif ()
 
     add_custom_target(module-${MODULE_NAME}-clean
             COMMAND ${CMAKE_COMMAND} -E chdir ${MODULE_BUILD_DIR} make -f Makefile clean
